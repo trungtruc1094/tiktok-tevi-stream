@@ -9,14 +9,12 @@ async function detectBigoStream(url, duration = 30000, rtmpServerUrl, executable
     });
     const page = await browser.newPage();
 
-    // Variable to store the detected FLV stream URL
     let flvStreamUrl = null;
 
     // Listen for network requests
     page.on('response', async (response) => {
         try {
             const requestUrl = response.url();
-
             // Detect URLs that contain 'flv' (FLV video stream URLs)
             if (requestUrl.includes('flv')) {
                 console.log(`FLV Stream URL Detected: ${requestUrl}`);
@@ -35,8 +33,19 @@ async function detectBigoStream(url, duration = 30000, rtmpServerUrl, executable
     });
 
     // Navigate to the Bigo livestream URL
-    console.log(`Navigating to Bigo stream URL: ${url}`);
-    await page.goto(url, { waitUntil: 'networkidle2' });
+    try {
+        console.log(`Navigating to Bigo stream URL: ${url}`);
+        await page.goto(url, { waitUntil: 'networkidle2', timeout: 120000 }); // Extend the timeout to handle slow network
+    } catch (err) {
+        console.error("Error navigating to the URL (Frame detached or timeout):", err.message);
+
+        // Ensure the browser is closed even in case of navigation error
+        try {
+            await browser.close();
+        } catch (closeErr) {
+            console.error("Error closing the browser:", closeErr.message);
+        }
+    }
 
     // Listen for the specified duration or until the FLV URL is detected
     console.log(`Listening for network requests for up to ${duration / 1000} seconds...`);
@@ -45,7 +54,11 @@ async function detectBigoStream(url, duration = 30000, rtmpServerUrl, executable
     // If no FLV URL is detected, close the browser after the timeout
     if (!flvStreamUrl) {
         console.log("No FLV URL detected after the timeout.");
-        await browser.close();
+        try {
+            await browser.close();
+        } catch (closeErr) {
+            console.error("Error closing the browser:", closeErr.message);
+        }
     }
 }
 
@@ -54,7 +67,8 @@ function forwardToRTMPServer(flvUrl, rtmpServerUrl) {
     console.log(`Forwarding FLV stream to RTMP server...`);
 
     // FFmpeg command to forward the FLV stream to the RTMP server
-    const ffmpegCommand = `ffmpeg -i "${flvUrl}" -c copy -f flv ${rtmpServerUrl}`;
+    //const ffmpegCommand = ffmpeg -i "${flvUrl}" -c copy -f flv ${rtmpServerUrl};
+    const ffmpegCommand = `ffmpeg -i "${flvUrl}" -ar 44100 -vcodec libx264 -r 25 -b:v 500k -f flv ${rtmpServerUrl}`;
 
     // Execute the FFmpeg command
     exec(ffmpegCommand, (error, stdout, stderr) => {
@@ -84,11 +98,10 @@ const askQuestion = (query) => {
 
 (async () => {
     // Prompt the user for the RTMP URL, stream key, and Bigo URL
-    const rtmpUrl = await askQuestion("Input RTMP URL: ");
     const streamKey = await askQuestion("Input Stream Key: ");
     const bigoUrl = await askQuestion("Input Bigo URL: ");
 
-    const FULL_RTMP_URL = `${rtmpUrl}${streamKey}`;
+    const FULL_RTMP_URL = `rtmps://live.tevi.com:443/live/${streamKey}`;
     const executablePath1 = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
 
     // Listen for network requests and forward the FLV stream to the RTMP server
